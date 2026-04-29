@@ -120,12 +120,52 @@ const _WIDGET_BASE = (function () {
       if(metadata.dimensions.some(d=>d.name==="Date"))filters.push({field:"Date",op:"startswith",value:m[1]});
       else if(metadata.dimensions.some(d=>d.name==="GJAHR"))filters.push({field:"GJAHR",op:"eq",value:m[1]});
     }
-    // Numeric filters
+    // Numeric filters — symbol-based: "Goals > 10"
     for(const src of[question,q]){
       for(const m of src.matchAll(/\b(\w+)\s*([><=!]{1,2})\s*(\d+(?:[.,]\d+)?)/gi)){
         const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
         if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:m[2],value:parseFloat(m[3].replace(",",".")),kind:"numeric"});
       }
+    }
+    // Turkish comparison: "Goals 10'dan büyük/fazla/yüksek" → Goals > 10
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)[''']?(?:dan|den|tan|ten)\s+(?:büyük|buyuk|fazla|yüksek|yuksek|daha\s*fazla|büyükeş|büyükeşit)/gi)){
+      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
+      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
+    }
+    // Turkish comparison: "Goals 10'dan küçük/az/düşük" → Goals < 10
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)[''']?(?:dan|den|tan|ten)\s+(?:küçük|kucuk|az|düşük|dusuk|daha\s*az)/gi)){
+      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
+      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:"<",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
+    }
+    // "Goals en az 10" / "en az 10 Goals" → Goals >= 10
+    for(const m of q.matchAll(/\b(\w+)\s+en\s+az\s+(\d+(?:[.,]\d+)?)/gi)){
+      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
+      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">=",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
+    }
+    for(const m of q.matchAll(/\ben\s+az\s+(\d+(?:[.,]\d+)?)\s+(\w+)/gi)){
+      const meas=mn[m[2].toLowerCase()]||ml[m[2].toLowerCase()];
+      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">=",value:parseFloat(m[1].replace(",",".")),kind:"numeric"});
+    }
+    // "Goals en fazla 10" → Goals <= 10
+    for(const m of q.matchAll(/\b(\w+)\s+en\s+fazla\s+(\d+(?:[.,]\d+)?)/gi)){
+      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
+      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:"<=",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
+    }
+    // "Goals N veya daha fazla/büyük" → Goals >= N
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)\s+(?:veya\s+)?daha\s+(?:fazla|büyük|buyuk|yüksek|yuksek)/gi)){
+      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
+      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">=",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
+    }
+    // "N ile M arasında Goals" / "Goals N ile M arasında" → N <= Goals <= M
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+)\s+ile\s+(\d+)\s+aras[iı]nda/gi)){
+      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
+      if(meas){if(!filters.some(f=>f.field===meas&&f.op===">="))filters.push({field:meas,op:">=",value:parseFloat(m[2]),kind:"numeric"});
+               if(!filters.some(f=>f.field===meas&&f.op==="<="))filters.push({field:meas,op:"<=",value:parseFloat(m[3]),kind:"numeric"});}
+    }
+    for(const m of q.matchAll(/\b(\d+)\s+ile\s+(\d+)\s+aras[iı]nda\s+(\w+)/gi)){
+      const meas=mn[m[3].toLowerCase()]||ml[m[3].toLowerCase()];
+      if(meas){if(!filters.some(f=>f.field===meas&&f.op===">="))filters.push({field:meas,op:">=",value:parseFloat(m[1]),kind:"numeric"});
+               if(!filters.some(f=>f.field===meas&&f.op==="<="))filters.push({field:meas,op:"<=",value:parseFloat(m[2]),kind:"numeric"});}
     }
     // pozitif/negatif
     for(const m of q.matchAll(/\b(\w+)\s+pozitif\b/gi)){const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">",value:0,kind:"numeric"});}
@@ -188,12 +228,13 @@ const _WIDGET_BASE = (function () {
       data = data.filter(row => {
         const val = row[f.field];
         if (f.kind === "numeric") {
-          const n = parseFloat(val);
+          const n = typeof val === "object" ? parseFloat(val?.raw ?? val?.value ?? 0) : parseFloat(val);
           if (isNaN(n)) return false;
           if (f.op === ">")  return n > f.value;
           if (f.op === ">=") return n >= f.value;
           if (f.op === "<")  return n < f.value;
           if (f.op === "<=") return n <= f.value;
+          if (f.op === "!=" || f.op === "<>") return n !== f.value;
           return n === f.value;
         }
         if (f.op === "eq") return String(val||"").toLowerCase() === String(f.value).toLowerCase();
@@ -414,35 +455,64 @@ const _WIDGET_BASE = (function () {
           }
         }
 
+        // Build from feeds (Path 1) — feeds only gives generic key strings in Optimized Story
         if (dimVals.length || measVals.length) {
           this._metadata = {
             dimensions: toMeta(dimVals,  "string"),
             measures:   toMeta(measVals, "decimal"),
           };
-          console.log("[JustAsk] meta (feeds):", JSON.stringify(this._metadata));
-          return;
+          console.log("[JustAsk] meta (feeds, no labels yet):", JSON.stringify(this._metadata));
+          // Don't return yet — try to enrich with real labels from Path 3 below
         }
 
-        // Path 2: md.dimensions / md.measures as arrays
-        if (Array.isArray(md?.dimensions)) {
-          this._metadata = {
+        // Path 2: md.dimensions / md.measures as arrays (some SAC versions)
+        if (Array.isArray(md?.dimensions) && md.dimensions.length) {
+          const fromMd = {
             dimensions: toMeta(md.dimensions, "string"),
             measures:   toMeta(md.measures || md.mainStructureMembers || [], "decimal"),
           };
-          console.log("[JustAsk] meta (md arrays):", JSON.stringify(this._metadata));
-          return;
+          // Only use if we got real labels (label differs from name)
+          if (fromMd.dimensions.some(d => d.label !== d.name)) {
+            this._metadata = fromMd;
+            console.log("[JustAsk] meta (md arrays):", JSON.stringify(this._metadata));
+            return;
+          }
         }
 
-        // Path 3: Old SDK getDataSource()
-        const ds = db.getDataSource?.();
-        if (ds) {
-          this._metadata = {
-            dimensions: (ds.getDimensions()||[]).map(d=>({name:d.getId?.(),label:d.getDescription?.()??d.getId?.(),type:"string"})).filter(d=>d.name),
-            measures:   (ds.getMeasures()||[]).map(m=>({name:m.getId?.(),  label:m.getDescription?.()??m.getId?.(),  type:"decimal"})).filter(m=>m.name),
-          };
-          console.log("[JustAsk] meta (old SDK):", JSON.stringify(this._metadata));
-          return;
-        }
+        // Path 3: getDataSource() — works in old SDK and some new SDK versions
+        // Use it to enrich labels on top of feed-detected keys
+        try {
+          const ds = db.getDataSource?.();
+          if (ds) {
+            const dsDims  = (ds.getDimensions?.() || []);
+            const dsMeas  = (ds.getMeasures?.()   || []);
+            console.log("[JustAsk] getDataSource dims:", JSON.stringify(dsDims.map(d=>({id:d.getId?.(),desc:d.getDescription?.()}))));
+            console.log("[JustAsk] getDataSource meas:", JSON.stringify(dsMeas.map(m=>({id:m.getId?.(),desc:m.getDescription?.()}))));
+            // Build a label map: generic key (dimensions_0) → real label
+            // Try to match by index (SAC preserves order)
+            if (this._metadata.dimensions.length) {
+              this._metadata.dimensions.forEach((d, i) => {
+                const label = dsDims[i]?.getDescription?.() || dsDims[i]?.getId?.();
+                if (label && label !== d.name) d.label = label;
+              });
+              this._metadata.measures.forEach((m, i) => {
+                const label = dsMeas[i]?.getDescription?.() || dsMeas[i]?.getId?.();
+                if (label && label !== m.name) m.label = label;
+              });
+              console.log("[JustAsk] meta enriched via getDataSource:", JSON.stringify(this._metadata));
+            } else {
+              // No feeds found — build purely from old SDK
+              this._metadata = {
+                dimensions: dsDims.map(d=>({name:d.getId?.(),label:d.getDescription?.()??d.getId?.(),type:"string"})).filter(d=>d.name),
+                measures:   dsMeas.map(m=>({name:m.getId?.(),  label:m.getDescription?.()??m.getId?.(),  type:"decimal"})).filter(m=>m.name),
+              };
+              console.log("[JustAsk] meta (old SDK full):", JSON.stringify(this._metadata));
+            }
+            return;
+          }
+        } catch(e3) { console.warn("[JustAsk] getDataSource error:", e3.message); }
+
+        if (this._metadata.dimensions.length || this._metadata.measures.length) return; // feeds were enough
 
         console.warn("[JustAsk] meta extraction failed — full metadata:", JSON.stringify(md)?.slice(0, 2000));
       } catch(e) { console.warn("[JustAsk] meta extract error:", e.message, e); }
