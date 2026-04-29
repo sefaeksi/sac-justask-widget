@@ -1,0 +1,33 @@
+{
+  "id": "com.custom.justask",
+  "version": "1.0.0",
+  "name": "Just Ask NLP",
+  "description": "Türkçe doğal dil ile SAC model sorgusu — Chart.js ile görselleştirme",
+  "webcomponentFiles": ["widget.js"],
+  "url": "<widget'ın host edildiği HTTPS URL>",
+  "dataBindings": {
+    "myDataSource": {
+      "feeds": [
+        { "id": "dimensions", "description": "Dimensions", "type": "dimension" },
+        { "id": "measures",   "description": "Measures",   "type": "measure"   }
+      ]
+    }
+  },
+  "properties": {
+    "maxRows": {
+      "type": "integer",
+      "default": 50,
+      "description": "Maksimum satır sayısı"
+    },
+    "defaultChartType": {
+      "type": "string",
+      "default": "bar",
+      "description": "Varsayılan grafik tipi: bar, hbar, line, pie, stacked, area, table"
+    },
+    "enableDynamicAliases": {
+      "type": "boolean",
+      "default": true,
+      "description": "Model field label'larından otomatik alias üretimi"
+    }
+  }
+}
