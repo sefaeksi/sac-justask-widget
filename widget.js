@@ -403,8 +403,34 @@ const _WIDGET_BASE = (function () {
           const keys = Object.keys(raw[0]);
           const numKeys = keys.filter(k => typeof this._numVal(raw[0][k]) === "number");
           const strKeys = keys.filter(k => !numKeys.includes(k));
-          this._metadata.dimensions = strKeys.map(k => ({ name: k, label: k, type: "string" }));
-          this._metadata.measures   = numKeys.map(k => ({ name: k, label: k, type: "decimal" }));
+
+          // Try to enrich labels from any available metadata path
+          const labelMap = {};
+          const scanFeeds = (feedsObj) => {
+            if (!feedsObj || typeof feedsObj !== "object") return;
+            const feedKeys = Object.keys(feedsObj);
+            for (const fk of feedKeys) {
+              const feedVal = feedsObj[fk];
+              const values = feedVal?.values || (Array.isArray(feedVal) ? feedVal : null);
+              if (!values) continue;
+              for (const v of values) {
+                if (!v || typeof v !== "object") continue;
+                const key = v.key || v.id || v.name;
+                const lbl = v.description || v.label || v.text || v.id;
+                if (key && lbl && key !== lbl) labelMap[key] = lbl;
+              }
+            }
+          };
+          // Try all likely paths in order
+          scanFeeds(db?.metadata?.feeds);
+          scanFeeds(db?.feeds);
+          if (Array.isArray(db?.metadata?.feeds)) {
+            for (const f of db.metadata.feeds) scanFeeds({ [f.id || f.key]: f });
+          }
+          console.log("[JustAsk] enriched labelMap:", JSON.stringify(labelMap));
+
+          this._metadata.dimensions = strKeys.map(k => ({ name: k, label: labelMap[k] || k, type: "string" }));
+          this._metadata.measures   = numKeys.map(k => ({ name: k, label: labelMap[k] || k, type: "decimal" }));
           console.log("[JustAsk] auto-detected meta:", JSON.stringify(this._metadata));
         }
 
