@@ -288,6 +288,46 @@ const _WIDGET_BASE = (function () {
     onCustomWidgetBeforeUpdate(changed) {
       if ("maxRows" in changed) this._maxRows = parseInt(changed.maxRows.newVal,10)||50;
       if ("defaultChartType" in changed) this._chartType = changed.defaultChartType.newVal||null;
+      if ("dimensionNames" in changed) this._applyNameConfig(changed.dimensionNames.newVal, null);
+      if ("measureNames"   in changed) this._applyNameConfig(null, changed.measureNames.newVal);
+    }
+
+    // Apply comma-separated name strings to _metadata labels
+    _applyNameConfig(dimStr, measStr) {
+      if (dimStr !== null && dimStr !== undefined) {
+        const names = dimStr.split(",").map(s => s.trim()).filter(Boolean);
+        names.forEach((lbl, i) => {
+          const key = "dimensions_" + i;
+          const entry = this._metadata.dimensions.find(d => d.name === key);
+          if (entry) entry.label = lbl;
+          else this._metadata.dimensions.push({ name: key, label: lbl, type: "string" });
+        });
+        this._savedDimNames = dimStr;
+      }
+      if (measStr !== null && measStr !== undefined) {
+        const names = measStr.split(",").map(s => s.trim()).filter(Boolean);
+        names.forEach((lbl, i) => {
+          const key = "measures_" + i;
+          const entry = this._metadata.measures.find(m => m.name === key);
+          if (entry) entry.label = lbl;
+          else this._metadata.measures.push({ name: key, label: lbl, type: "decimal" });
+        });
+        this._savedMeasNames = measStr;
+      }
+    }
+
+    // Persist / restore field names via localStorage
+    _saveNames(dimStr, measStr) {
+      try {
+        const key = "justask_names_" + (this.id || "default");
+        localStorage.setItem(key, JSON.stringify({ dims: dimStr, meas: measStr }));
+      } catch(e) {}
+    }
+    _loadNames() {
+      try {
+        const key = "justask_names_" + (this.id || "default");
+        return JSON.parse(localStorage.getItem(key) || "{}");
+      } catch(e) { return {}; }
     }
 
     // Property setter — SAC new SDK injects data this way (key = binding name)
@@ -337,7 +377,12 @@ const _WIDGET_BASE = (function () {
         }
 
         const md = db.metadata;
-        console.log("[JustAsk] metadata keys:", Object.keys(md || {}));
+        const mdKeys = Object.keys(md || {});
+        console.log("[JustAsk] metadata keys:", JSON.stringify(mdKeys));
+        // Log ALL metadata keys and their content to find where labels live
+        for (const k of mdKeys) {
+          if (k !== "feeds") console.log("[JustAsk] md." + k + ":", JSON.stringify(md[k])?.slice(0, 400));
+        }
         console.log("[JustAsk] feeds raw:", JSON.stringify(md?.feeds)?.slice(0, 500));
 
         const toMeta = (arr, type) => (arr || []).map(v => {
@@ -401,6 +446,11 @@ const _WIDGET_BASE = (function () {
 
         console.warn("[JustAsk] meta extraction failed — full metadata:", JSON.stringify(md)?.slice(0, 2000));
       } catch(e) { console.warn("[JustAsk] meta extract error:", e.message, e); }
+
+      // Always apply saved/configured names on top of whatever was extracted
+      const saved = this._loadNames();
+      if (saved.dims) this._applyNameConfig(saved.dims, null);
+      if (saved.meas) this._applyNameConfig(null, saved.meas);
     }
 
     // ── Row extraction from binding data ─────────────────────────────────
@@ -488,16 +538,34 @@ const _WIDGET_BASE = (function () {
           .btn:hover{background:#0058c8;}
           .btn.sec{background:#f0f0f0;color:#333;}
           .btn.sec:hover{background:#e0e0e0;}
+          .btn.cfg{padding:6px 10px;background:#f0f0f0;color:#555;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:13px;}
+          .btn.cfg:hover{background:#e0e0e0;}
           .types{display:flex;gap:4px;padding:4px 10px;border-bottom:1px solid #f0f0f0;flex-shrink:0;flex-wrap:wrap;}
           .tbtn{padding:3px 10px;border:1px solid #ccc;border-radius:12px;background:#fff;color:#555;cursor:pointer;font-size:11px;}
           .tbtn.active{background:#0070F2;color:#fff;border-color:#0070F2;}
+          .cfg-panel{display:none;padding:8px 10px;border-bottom:1px solid #e5e5e5;background:#fafafa;flex-shrink:0;max-height:260px;overflow-y:auto;}
+          .cfg-panel.open{display:block;}
+          .cfg-section{font-size:11px;font-weight:bold;color:#0070F2;margin:6px 0 4px;}
+          .cfg-row{display:flex;gap:6px;align-items:center;margin-bottom:5px;}
+          .cfg-slot{font-size:10px;color:#999;width:90px;flex-shrink:0;font-family:monospace;}
+          .cfg-inp{flex:1;padding:3px 7px;border:1px solid #ccc;border-radius:3px;font-size:12px;}
+          .cfg-sample{font-size:10px;color:#aaa;width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;}
+          .cfg-hint{font-size:10px;color:#aaa;margin-top:2px;}
           .ca{flex:1;padding:10px;overflow:hidden;position:relative;min-height:0;}
           .st{padding:4px 10px;font-size:11px;color:#888;border-top:1px solid #f0f0f0;flex-shrink:0;}
         </style>
         <div class="tb">
-          <input class="inp" id="q" type="text" placeholder="Soru yazın… (örn: name bazında en çok Assists top 10)">
+          <input class="inp" id="q" type="text" placeholder="Soru yazın… (örn: Name bazında en çok Goals top 10)">
           <button class="btn" id="go">Sorgula</button>
           <button class="btn sec" id="clr">Temizle</button>
+          <button class="btn cfg" id="cfgBtn" title="Alan adlarını yapılandır">⚙</button>
+        </div>
+        <div class="cfg-panel" id="cfgPanel">
+          <div id="cfgFields"><div class="cfg-hint" style="padding:4px 0;">Model bağlandıktan sonra alan adları burada görünür.</div></div>
+          <div class="cfg-row" style="margin-top:6px;">
+            <button class="btn" id="cfgSave" style="font-size:11px;padding:4px 12px;">Kaydet</button>
+            <span class="cfg-hint" id="cfgMsg"></span>
+          </div>
         </div>
         <div class="types" id="types">
           <button class="tbtn" data-type="bar">Bar</button>
@@ -518,6 +586,27 @@ const _WIDGET_BASE = (function () {
         inp.value=""; this._root.getElementById("chart").innerHTML="";
         this._setStatus("Temizlendi."); this._lastPlan=null; this._lastQ="";
       });
+
+      // Settings panel toggle
+      this._root.getElementById("cfgBtn").addEventListener("click", () => {
+        const panel = this._root.getElementById("cfgPanel");
+        panel.classList.toggle("open");
+        if (panel.classList.contains("open")) this._buildCfgFields();
+      });
+      this._root.getElementById("cfgSave").addEventListener("click", () => {
+        const saved = this._loadNames();
+        const dimNames = [], measNames = [];
+        this._root.querySelectorAll("[data-cfg-dim]").forEach(inp => dimNames.push(inp.value.trim()));
+        this._root.querySelectorAll("[data-cfg-meas]").forEach(inp => measNames.push(inp.value.trim()));
+        const dimStr  = dimNames.join(",");
+        const measStr = measNames.join(",");
+        this._applyNameConfig(dimStr, measStr);
+        this._saveNames(dimStr, measStr);
+        this._root.getElementById("cfgMsg").textContent = "✓ Kaydedildi";
+        setTimeout(() => { this._root.getElementById("cfgMsg").textContent = ""; }, 2000);
+        if (this._lastQ) this._runQuery(this._lastQ);
+        else if (this._allRows.length) this._setStatus(this._allRows.length + " satır yüklendi.");
+      });
       this._root.getElementById("types").addEventListener("click", e=>{
         const btn=e.target.closest("[data-type]"); if(!btn) return;
         this._chartType=btn.dataset.type;
@@ -525,6 +614,55 @@ const _WIDGET_BASE = (function () {
         btn.classList.add("active");
         if(this._lastPlan&&this._allRows.length){ this._lastPlan.chart_type=this._chartType; this._draw(applyPlan(this._allRows,this._lastPlan),this._lastPlan); }
       });
+    }
+
+    // ── Build dynamic config fields based on current metadata ───────────
+    _buildCfgFields() {
+      const container = this._root.getElementById("cfgFields");
+      if (!container) return;
+      const saved = this._loadNames();
+      const savedDims  = (saved.dims  || "").split(",").map(s => s.trim());
+      const savedMeas  = (saved.meas  || "").split(",").map(s => s.trim());
+      const dims  = this._metadata.dimensions;
+      const meas  = this._metadata.measures;
+      if (!dims.length && !meas.length) {
+        container.innerHTML = '<div class="cfg-hint" style="padding:4px 0;">Model bağlandıktan sonra burası dolar.</div>';
+        return;
+      }
+      // Gather sample values from first few rows
+      const sample = {};
+      for (const row of this._allRows.slice(0, 5)) {
+        for (const k of Object.keys(row)) {
+          if (!sample[k]) sample[k] = [];
+          if (row[k] != null && sample[k].length < 3) sample[k].push(String(row[k]));
+        }
+      }
+      let html = '';
+      if (dims.length) {
+        html += '<div class="cfg-section">Boyutlar (Dimensions)</div>';
+        dims.forEach((d, i) => {
+          const ex = (sample[d.name] || []).join(", ");
+          const val = savedDims[i] || (d.label !== d.name ? d.label : "");
+          html += `<div class="cfg-row">
+            <span class="cfg-slot">${d.name}</span>
+            <input class="cfg-inp" data-cfg-dim="${i}" type="text" value="${val}" placeholder="Alan adı…">
+            <span class="cfg-sample" title="${ex}">${ex}</span>
+          </div>`;
+        });
+      }
+      if (meas.length) {
+        html += '<div class="cfg-section">Ölçümler (Measures)</div>';
+        meas.forEach((m, i) => {
+          const ex = (sample[m.name] || []).join(", ");
+          const val = savedMeas[i] || (m.label !== m.name ? m.label : "");
+          html += `<div class="cfg-row">
+            <span class="cfg-slot">${m.name}</span>
+            <input class="cfg-inp" data-cfg-meas="${i}" type="text" value="${val}" placeholder="Alan adı…">
+            <span class="cfg-sample" title="${ex}">${ex}</span>
+          </div>`;
+        });
+      }
+      container.innerHTML = html;
     }
 
     async _onQuery(question) {
