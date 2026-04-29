@@ -4,7 +4,7 @@
   "name": "Just Ask NLP",
   "description": "Türkçe doğal dil ile SAC model sorgusu — Chart.js ile görselleştirme",
   "webcomponentFiles": ["widget.js"],
-  "url": "<widget'ın host edildiği HTTPS URL>",
+  "url": "https://sefaeksi.github.io/sac-justask-widget/",
   "dataBindings": {
     "myDataSource": {
       "feeds": [
