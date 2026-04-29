@@ -127,46 +127,57 @@ const _WIDGET_BASE = (function () {
         if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:m[2],value:parseFloat(m[3].replace(",",".")),kind:"numeric"});
       }
     }
-    // Turkish comparison: "Goals 10'dan büyük/fazla/yüksek" → Goals > 10
-    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)[''']?(?:dan|den|tan|ten)\s+(?:büyük|buyuk|fazla|yüksek|yuksek|daha\s*fazla|büyükeş|büyükeşit)/gi)){
-      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
-      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
-    }
-    // Turkish comparison: "Goals 10'dan küçük/az/düşük" → Goals < 10
-    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)[''']?(?:dan|den|tan|ten)\s+(?:küçük|kucuk|az|düşük|dusuk|daha\s*az)/gi)){
-      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
-      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:"<",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
-    }
-    // "Goals en az 10" / "en az 10 Goals" → Goals >= 10
-    for(const m of q.matchAll(/\b(\w+)\s+en\s+az\s+(\d+(?:[.,]\d+)?)/gi)){
-      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
-      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">=",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
-    }
-    for(const m of q.matchAll(/\ben\s+az\s+(\d+(?:[.,]\d+)?)\s+(\w+)/gi)){
-      const meas=mn[m[2].toLowerCase()]||ml[m[2].toLowerCase()];
-      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">=",value:parseFloat(m[1].replace(",",".")),kind:"numeric"});
-    }
-    // "Goals en fazla 10" → Goals <= 10
-    for(const m of q.matchAll(/\b(\w+)\s+en\s+fazla\s+(\d+(?:[.,]\d+)?)/gi)){
-      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
-      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:"<=",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
-    }
-    // "Goals N veya daha fazla/büyük" → Goals >= N
-    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)\s+(?:veya\s+)?daha\s+(?:fazla|büyük|buyuk|yüksek|yuksek)/gi)){
-      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
-      if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">=",value:parseFloat(m[2].replace(",",".")),kind:"numeric"});
-    }
-    // "N ile M arasında Goals" / "Goals N ile M arasında" → N <= Goals <= M
+    // Turkish/natural language numeric comparisons
+    // Helper: resolve field name from token
+    const resolveMeas = w => mn[w]||ml[w]||mn[w.replace(/ı/g,"i").replace(/ü/g,"u").replace(/ş/g,"s").replace(/ğ/g,"g").replace(/ç/g,"c").replace(/ö/g,"o")]||ml[w.replace(/ı/g,"i").replace(/ü/g,"u").replace(/ş/g,"s").replace(/ğ/g,"g").replace(/ç/g,"c").replace(/ö/g,"o")];
+    const addF = (meas,op,val) => { if(meas&&!filters.some(f=>f.field===meas&&f.op===op))filters.push({field:meas,op,value:val,kind:"numeric"}); };
+
+    // Pattern A: "Field N'dan/N dan büyük|fazla|yüksek" → Field > N  (also handles space before dan)
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)\s*[''']?\s*(?:dan|den|tan|ten)\s+(?:büyük|buyuk|fazla|yüksek|yuksek|daha\s*fazla)/gi))
+      addF(resolveMeas(m[1].toLowerCase()), ">", parseFloat(m[2].replace(",",".")));
+    // Pattern A-rev: "N'dan büyük Field" → Field > N
+    for(const m of q.matchAll(/\b(\d+(?:[.,]\d+)?)\s*[''']?\s*(?:dan|den|tan|ten)\s+(?:büyük|buyuk|fazla|yüksek|yuksek)\s+(?:olan\s+)?(\w+)/gi))
+      addF(resolveMeas(m[2].toLowerCase()), ">", parseFloat(m[1].replace(",",".")));
+
+    // Pattern B: "Field N'dan/N dan küçük|az|düşük" → Field < N
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)\s*[''']?\s*(?:dan|den|tan|ten)\s+(?:küçük|kucuk|az|düşük|dusuk|daha\s*az)/gi))
+      addF(resolveMeas(m[1].toLowerCase()), "<", parseFloat(m[2].replace(",",".")));
+    // Pattern B-rev: "N'dan küçük Field"
+    for(const m of q.matchAll(/\b(\d+(?:[.,]\d+)?)\s*[''']?\s*(?:dan|den|tan|ten)\s+(?:küçük|kucuk|az|düşük|dusuk)\s+(?:olan\s+)?(\w+)/gi))
+      addF(resolveMeas(m[2].toLowerCase()), "<", parseFloat(m[1].replace(",",".")));
+
+    // Pattern C: "Field en az N" → Field >= N
+    for(const m of q.matchAll(/\b(\w+)\s+en\s+az\s+(\d+(?:[.,]\d+)?)/gi))
+      addF(resolveMeas(m[1].toLowerCase()), ">=", parseFloat(m[2].replace(",",".")));
+    for(const m of q.matchAll(/\ben\s+az\s+(\d+(?:[.,]\d+)?)\s+(?:olan\s+)?(\w+)/gi))
+      addF(resolveMeas(m[2].toLowerCase()), ">=", parseFloat(m[1].replace(",",".")));
+
+    // Pattern D: "Field en fazla N" → Field <= N
+    for(const m of q.matchAll(/\b(\w+)\s+en\s+(?:fazla|cok|çok)\s+(\d+(?:[.,]\d+)?)/gi))
+      addF(resolveMeas(m[1].toLowerCase()), "<=", parseFloat(m[2].replace(",",".")));
+    for(const m of q.matchAll(/\ben\s+(?:fazla|cok|çok)\s+(\d+(?:[.,]\d+)?)\s+(?:olan\s+)?(\w+)/gi))
+      addF(resolveMeas(m[2].toLowerCase()), "<=", parseFloat(m[1].replace(",",".")));
+
+    // Pattern E: "Field N veya daha fazla/büyük" → Field >= N
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)\s+(?:veya\s+)?daha\s+(?:fazla|büyük|buyuk|yüksek|yuksek)/gi))
+      addF(resolveMeas(m[1].toLowerCase()), ">=", parseFloat(m[2].replace(",",".")));
+
+    // Pattern F: "Field N ile M arasında" or "N ile M arasında Field"
     for(const m of q.matchAll(/\b(\w+)\s+(\d+)\s+ile\s+(\d+)\s+aras[iı]nda/gi)){
-      const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];
-      if(meas){if(!filters.some(f=>f.field===meas&&f.op===">="))filters.push({field:meas,op:">=",value:parseFloat(m[2]),kind:"numeric"});
-               if(!filters.some(f=>f.field===meas&&f.op==="<="))filters.push({field:meas,op:"<=",value:parseFloat(m[3]),kind:"numeric"});}
+      const meas=resolveMeas(m[1].toLowerCase());
+      if(meas){addF(meas,">=",parseFloat(m[2]));addF(meas,"<=",parseFloat(m[3]));}
     }
-    for(const m of q.matchAll(/\b(\d+)\s+ile\s+(\d+)\s+aras[iı]nda\s+(\w+)/gi)){
-      const meas=mn[m[3].toLowerCase()]||ml[m[3].toLowerCase()];
-      if(meas){if(!filters.some(f=>f.field===meas&&f.op===">="))filters.push({field:meas,op:">=",value:parseFloat(m[1]),kind:"numeric"});
-               if(!filters.some(f=>f.field===meas&&f.op==="<="))filters.push({field:meas,op:"<=",value:parseFloat(m[2]),kind:"numeric"});}
+    for(const m of q.matchAll(/\b(\d+)\s+ile\s+(\d+)\s+aras[iı]nda\s+(?:olan\s+)?(\w+)/gi)){
+      const meas=resolveMeas(m[3].toLowerCase());
+      if(meas){addF(meas,">=",parseFloat(m[1]));addF(meas,"<=",parseFloat(m[2]));}
     }
+
+    // Pattern G: "Field eşit N" / "Field = N" already handled by symbol block above
+    // Pattern H: "Field N'dan büyük eşit" → >= (rare but add for completeness)
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)\s*[''']?\s*(?:dan|den|tan|ten)\s+büyük(?:\s+eşit|\s*=)/gi))
+      addF(resolveMeas(m[1].toLowerCase()), ">=", parseFloat(m[2].replace(",",".")));
+    for(const m of q.matchAll(/\b(\w+)\s+(\d+(?:[.,]\d+)?)\s*[''']?\s*(?:dan|den|tan|ten)\s+küçük(?:\s+eşit|\s*=)/gi))
+      addF(resolveMeas(m[1].toLowerCase()), "<=", parseFloat(m[2].replace(",",".")));
     // pozitif/negatif
     for(const m of q.matchAll(/\b(\w+)\s+pozitif\b/gi)){const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:">",value:0,kind:"numeric"});}
     for(const m of q.matchAll(/\b(\w+)\s+negatif\b/gi)){const meas=mn[m[1].toLowerCase()]||ml[m[1].toLowerCase()];if(meas&&!filters.some(f=>f.field===meas))filters.push({field:meas,op:"<",value:0,kind:"numeric"});}
@@ -216,7 +227,9 @@ const _WIDGET_BASE = (function () {
     if(sd.size===0){const nv=metadata.dimensions.filter(d=>d.name!=="Version");if(nv.length>0)sd.add(nv[0].name);}
     const sortMeas=sortOverride||(sm.size>0?[...sm][0]:null);
     const orderbyFinal=(orderby&&sortMeas)?{field:sortMeas,dir:sortDir}:null;
-    return{filters,dimensions:[...sd],measures:[...sm],top,orderby:orderbyFinal,chart_type:chartType,scale:scaleMap,agg:aggMap,derived:[]};
+    const plan={filters,dimensions:[...sd],measures:[...sm],top,orderby:orderbyFinal,chart_type:chartType,scale:scaleMap,agg:aggMap,derived:[]};
+    console.log("[JustAsk] plan:", JSON.stringify({q:question,filters:plan.filters,dims:plan.dimensions,meas:plan.measures,top:plan.top,orderby:plan.orderby}));
+    return plan;
   }
 
   // =========================================================================
