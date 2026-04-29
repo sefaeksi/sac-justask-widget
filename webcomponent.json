@@ -1,4 +1,4 @@
-﻿{
+{
   "eula": "",
   "vendor": "",
   "license": "",
@@ -12,7 +12,7 @@
       "kind": "main",
       "tag": "com-custom-justask",
       "url": "/widget.js",
-      "integrity": "sha256-TQ/+I5/+atC0r0m2p86Iy9HoJtHmxVp7c1ObdcRovqM=",
+      "integrity": "sha256-hW3ifgmlj5Otbu5Ye8ulMN7iVMMUyG9bs/R8tENIoTo=",
       "ignoreIntegrity": true
     }
   ],
