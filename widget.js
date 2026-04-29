@@ -325,6 +325,17 @@ const _WIDGET_BASE = (function () {
     // ── Metadata extraction — supports both old and new SAC SDK ───────────
     _extractMeta(db) {
       try {
+        // Dump the full binding object so we can see its shape
+        try {
+          const dbDump = JSON.stringify(db, null, 0);
+          console.log("[JustAsk] db dump:", dbDump.slice(0, 1200));
+        } catch(e) {
+          const dbKeys = [];
+          for (const k in db) dbKeys.push(k + "=" + typeof db[k]);
+          console.log("[JustAsk] db keys (for-in):", dbKeys.join(", "));
+          try { console.log("[JustAsk] db.metadata:", JSON.stringify(db.metadata)?.slice(0, 800)); } catch(e2){}
+        }
+
         const md = db.metadata;
         console.log("[JustAsk] metadata keys:", Object.keys(md || {}));
         console.log("[JustAsk] feeds raw:", JSON.stringify(md?.feeds)?.slice(0, 500));
